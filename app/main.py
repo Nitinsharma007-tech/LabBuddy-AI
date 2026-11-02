@@ -9,7 +9,7 @@ from app.ui.dashboard import LabBuddyDashboard
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("LabBuddy AI")
-    app.setFont(QFont("Times New Roman", 10))
+    app.setFont(QFont("Cambria", 10))
 
     window = LabBuddyDashboard()
     window.show()
