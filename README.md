@@ -1,353 +1,106 @@
-# 🤖 LabBuddy AI — Your AI Lab Partner
+# 🤖 RoboBuddy AI — Desktop Programming Tutor
 
-LabBuddy AI is an intelligent laboratory syllabus management application designed for students. It helps students organize their laboratory courses, upload academic syllabi, automatically extract syllabus content, and identify practical experiments.
-
-The desktop application provides a simple course management dashboard. The actual experiment learning experience is intended to be handled through a separate AI-powered voice assistant.
+RoboBuddy is a floating AI desktop companion that acts as a personal programming lab instructor. It guides students step by step through laboratory programming experiments, verifies their understanding before opening a coding workspace in VS Code, observes their live code in real time, and teaches them how to debug their own mistakes using a 4-tier Socratic hint system — **never providing ready-to-copy code**.
 
 ---
 
-## ✨ Features
+## 🚀 Key Features
 
-### 📚 Course Management
-- Add multiple laboratory courses.
-- Upload course syllabi in PDF, DOCX, and TXT formats.
-- Edit course names.
-- View course information.
-- Delete courses with confirmation.
-- Automatically save course information locally.
-- Retain courses after restarting the application.
+### 1. 🌐 Dual-Language Manager (English & Hinglish)
+- **Startup Language Choice**: Greets the user: *"Hello! Welcome back. Which language would you prefer today, English or Hindi?"*
+- **Natural Hinglish**: Conversational Hinglish for Indian students with technical programming keywords preserved verbatim (`for`, `while`, `def`, `class`, `print`, etc.).
+- **Voice Switching**: Switch languages anytime by speaking: *"Hindi mode on karo"*, *"Switch to English"*, etc.
+- **Multilingual Speech Recognition & TTS**: Deepgram Multilingual STT combined with dynamic Edge-TTS voice pairing (`hi-IN-MadhurNeural` for Hinglish, `en-US-AndrewMultilingualNeural` for English).
 
-### 📄 Syllabus Processing
-- Extract text from PDF documents.
-- Extract paragraphs and tables from DOCX documents.
-- Read TXT syllabus files.
-- Automatically identify experiment numbers and titles.
-- Display extracted experiments.
-- View the original extracted syllabus content.
+### 2. 🧪 Structured Experiment Teaching & Understanding Confirmation Loop
+- **Step-by-Step Pedagogy**:
+  1. Relatable real-world analogy.
+  2. Core concepts & logic.
+  3. Step-by-step algorithm.
+  4. Expected input/output.
+- **Understanding Confirmation**: Asks *"Did you understand the experiment, or do you need me to explain anything again?"* (Hinglish: *"Experiment samajh aa gaya ya kisi part ko dobara explain karun?"*).
+- **Adaptive Re-Explanation**: If the student does not understand, RoboBuddy re-explains using simpler terms and a completely new analogy without repeating itself. Workspace is never created until the student confirms understanding.
 
-### 🖥️ Desktop Application
-- Modern dark-themed dashboard.
-- Built using Python and PySide6.
-- Course statistics and experiment counts.
-- Simple and user-friendly interface.
-- Local course data storage.
+### 3. 📂 Dedicated Workspace Creation & VS Code Integration
+- Generates `experiments/<Course>/<Experiment_Folder>/` with `main.py` and `experiment_info.json`.
+- Automatically opens the workspace and starter file in VS Code using safe subprocess argument lists.
+- Preserves existing student code (never overwrites).
+
+### 4. 👁️ Live Background Code Monitoring & Debouncing
+- Watches only the active experiment directory in a dedicated background `QThread`.
+- Debounces file events (2–3 second quiet period) to avoid interrupting active typing.
+- Pinpoints changed lines and surrounding AST context.
+
+### 5. 🧠 4-Level Error Identification & Retrieval Pipeline
+```text
+Code Change Detected (Stable)
+            │
+            ▼
+LEVEL 1: Local Regex & AST Syntax Parsing
+(Zero API latency; catches missing colons, indentation, typos, operator issues)
+            │ [If no syntax error]
+            ▼
+LEVEL 2: Exact Logical Mistake Cache
+(Fast SQLite lookup by normalized code pattern)
+            │ [If no exact cache match]
+            ▼
+LEVEL 3: Semantic RAG Vector Retrieval
+(Finds equivalent mistakes with different variable names via cosine similarity)
+            │ [If no semantic match]
+            ▼
+LEVEL 4: Gemini 2.5 Flash Socratic Fallback
+(Diagnoses novel reasoning mistakes & persists to mistake cache)
+```
+
+### 6. 🎓 Strict Socratic Teaching Rule (NEVER GIVES READY-TO-COPY CODE)
+- Never provides complete solutions, replacement blocks, or full functions.
+- Progressive 4-tier hints:
+  - **Hint 1**: Pinpoints line number & error category.
+  - **Hint 2**: Explains the underlying programming concept.
+  - **Hint 3**: Asks a guiding question to trigger self-discovery.
+  - **Hint 4**: Clarifies the rule in simple terms and prompts the student to edit and retry.
 
 ---
 
 ## 🛠️ Technology Stack
 
-| Technology | Purpose |
+| Component | Library / Framework |
 |---|---|
-| Python | Core programming language |
-| PySide6 | Desktop graphical interface |
-| PyMuPDF | PDF text extraction |
-| python-docx | Word document processing |
-| JSON | Local course information storage |
-| Git & GitHub | Version control |
+| Desktop GUI | PySide6 (Qt for Python) |
+| Voice Input (STT) | SoundDevice + Deepgram WebSocket (`flux-general-multi`) |
+| Voice Output (TTS) | Edge-TTS + Qt QMediaPlayer (`en-US` & `hi-IN` neural voices) |
+| LLM Brain | Google GenAI SDK (`gemini-2.5-flash`) |
+| Local Vector / Cache | SQLite3 + Normalized Vector Similarity |
+| Syllabus Parsing | PyMuPDF (fitz) + python-docx |
 
 ---
 
-## 📁 Project Structure
+## 💻 How to Run
 
-```text
-LabBuddy-AI/
-│
-├── app/
-│   ├── main.py
-│   │
-│   ├── core/
-│   │
-│   ├── ui/
-│   │   ├── dashboard.py
-│   │   ├── course_details.py
-│   │   ├── experiment_page.py
-│   │
-│   ├── syllabus/
-│   │   ├── parser.py
-│   │   └── experiment_extractor.py
-│   │
-│   ├── environment/
-│   │
-│   ├── brain/
-│   │
-│   ├── voice/
-│   │
-│   └── database/
-│
-├── course_workspaces/
-│   └── Each course has its own folder
-│       └── course.json
-│
-├── assets/
-│
-├── data/
-│
-├── requirements.txt
-├── README.md
-└── .gitignore
-```
-
-*Note: Some directories are reserved for future AI assistant development.*
-
----
-
-# 🚀 Installation and Setup
-
-Follow these instructions to run LabBuddy AI on your computer.
-
-## 1. Prerequisites
-
-Install the following software:
-
-- Python 3.11 or 3.12
-- Git
-- Visual Studio Code (recommended)
-
-Check whether Python is installed:
-
-```bash
-python --version
-```
-
-Check Git:
-
-```bash
-git --version
-```
-
-If these commands are not recognized, install Python and Git first.
-
-Python: https://www.python.org/downloads/
-
-Git: https://git-scm.com/downloads
-
-## 2. Clone the GitHub Repository
-
-Open a terminal and execute:
-
-```bash
-git clone YOUR_GITHUB_REPOSITORY_URL
-```
-
-Move into the project directory:
-
-```bash
-cd LabBuddy-AI
-```
-
-Replace `YOUR_GITHUB_REPOSITORY_URL` with the actual GitHub repository URL.
-
-## 3. Create a Virtual Environment
-
-A virtual environment keeps project dependencies separate from other Python projects.
-
-### Windows (PowerShell)
-
-```powershell
-python -m venv venv
-```
-
-Activate it:
-
+### 1. Activate Virtual Environment
 ```powershell
 .\venv\Scripts\Activate.ps1
 ```
 
-If PowerShell blocks activation, run:
+### 2. Configure Environment Variables
+Create or verify `.env`:
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
+DEEPGRAM_API_KEY=your_deepgram_api_key_here
+```
 
+### 3. Run RoboBuddy Companion
 ```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+python app/robot_main.py
 ```
 
-Then activate again:
-
+### 4. Run Course Management Dashboard
 ```powershell
-.\venv\Scripts\Activate.ps1
+python app/main.py
 ```
 
-### Windows (Command Prompt)
-
-```cmd
-python -m venv venv
-venv\Scripts\activate
+### 5. Run Automated Pipeline Test
+```powershell
+python tests/test_pipeline.py
 ```
-
-### Linux / macOS
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-## 4. Upgrade pip
-
-```bash
-python -m pip install --upgrade pip
-```
-
-## 5. Install Project Dependencies
-
-Install all dependencies using:
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-If you are installing dependencies individually:
-
-```bash
-python -m pip install PySide6
-python -m pip install python-dotenv
-python -m pip install PyMuPDF
-python -m pip install python-docx
-```
-
-## 6. Run LabBuddy AI
-
-From the project root, execute:
-
-```bash
-python -m app.main
-```
-
-The LabBuddy AI desktop dashboard should now launch.
-
----
-
-# 📖 How to Use LabBuddy AI
-
-### Step 1 — Launch the Application
-
-Run the application using:
-
-```bash
-python -m app.main
-```
-
-### Step 2 — Add a Course
-
-- Click **Add Course**.
-- Enter your course name.
-- Select the syllabus file.
-
-Supported file formats:
-
-- `.pdf`
-- `.docx`
-- `.txt`
-
-### Step 3 — Automatic Syllabus Processing
-
-LabBuddy AI extracts the syllabus text and identifies experiment headings.
-
-### Step 4 — Manage Your Courses
-
-From the dashboard, you can:
-
-- View Details — View course information, extracted syllabus, and experiments.
-- Edit — Change the course name.
-- Delete — Remove the course and its saved workspace.
-
-### Step 5 — Access Your Saved Courses
-
-Course information is stored locally inside:
-
-```text
-course_workspaces/
-```
-
-Each course has its own folder containing its `course.json` file.
-
----
-
-# 🔄 Git and GitHub Commands
-
-If you are contributing to the project, use the following commands.
-
-### Check Repository Status
-
-```bash
-git status
-```
-
-### Add Changes
-
-```bash
-git add .
-```
-
-### Commit Changes
-
-```bash
-git commit -m "Describe your changes"
-```
-
-### Push Changes to GitHub
-
-```bash
-git push
-```
-
-### Pull Latest Changes
-
-```bash
-git pull
-```
-
----
-
-# 🧹 Important Notes
-
-1. Always activate the virtual environment before running the application.
-2. Install dependencies using the active virtual environment.
-3. Do not upload your virtual environment folder to GitHub.
-4. Do not commit API keys, passwords, or other secrets.
-5. Course data is stored locally on the computer.
-6. Keep backups of important course workspaces.
-7. Scanned PDFs may require OCR support, which is not currently included.
-8. Experiment extraction currently relies on recognizable experiment heading patterns.
-
----
-
-# 🛣️ Future Enhancements
-
-The broader LabBuddy AI project is planned to include:
-
-- AI-powered voice assistant.
-- English, Hindi, and Hinglish interaction.
-- Speech recognition using Deepgram.
-- AI reasoning using Google Gemini.
-- Text-to-speech using Edge TTS.
-- Personalized experiment explanations.
-- Interactive voice-based doubt solving.
-- Separate Python environments for individual courses.
-
-These are planned extensions and are not all implemented in the current desktop application.
-
----
-
-# 👨‍💻 Development
-
-Contributions, suggestions, and improvements are welcome.
-
-For development:
-
-```bash
-git checkout -b feature/your-feature-name
-```
-
-After making changes:
-
-```bash
-git add .
-git commit -m "Add your feature description"
-git push -u origin feature/your-feature-name
-```
-
-You can then open a Pull Request on GitHub.
-
----
-
-**LabBuddy AI — Learn smarter. Experiment better.** 🤖
-
-*Developed as an AI-powered laboratory learning and course management project.*

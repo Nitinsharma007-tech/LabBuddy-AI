@@ -65,7 +65,12 @@ class RobotMascot(QWidget):
         painter.setPen(QPen(QColor("#6b9cac"), 2))
         painter.drawRoundedRect(27, 30, 98, 65, 25, 25)
 
-        eye_color = QColor("#ffb454") if self.state == "error" else QColor("#50f4ed")
+        if self.state == "error":
+            eye_color = QColor("#ff7043")
+        elif self.state == "analyzing":
+            eye_color = QColor("#00e5ff")
+        else:
+            eye_color = QColor("#50f4ed")
         if self.blink in (0, 1, 2):
             painter.setPen(QPen(eye_color, 4))
             painter.drawLine(53, 61, 64, 61)
@@ -394,11 +399,16 @@ class RobotWindow(QWidget):
             "idle": "Ready! Click me.",
             "listening": "🎤 Listening to you...",
             "thinking": "🧠 Thinking...",
-            "speaking": "🤖 Here's my answer!",
-            "error": "Something went wrong."
+            "speaking": "🤖 Speaking...",
+            "analyzing": "🔍 Analyzing code...",
+            "error": "⚠️ Error detected!",
         }
         self.status.setText(labels.get(state, "Ready! Click me."))
         self.mascot.update()
+
+    def show_hint(self, category, line_number, hint_text):
+        title = f"⚠️ HINT (Line {line_number}): {category.upper()}"
+        self.show_bubble(hint_text, title)
 
     def show_bubble(self, text, title="LABBUDDY"):
         old_bottom_right = self.frameGeometry().bottomRight()

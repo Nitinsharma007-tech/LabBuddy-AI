@@ -274,7 +274,13 @@ class LabBuddySpeaker(QObject):
 
         return result
 
-    def speak(self, text):
+    def set_voice(self, voice: str):
+        if voice:
+            self.voice = voice
+
+    def speak(self, text, voice=None):
+        if voice:
+            self.voice = voice
 
         self.stop()
 

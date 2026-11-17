@@ -5,7 +5,10 @@ import threading
 import time
 from urllib.parse import urlencode
 
-import sounddevice as sd
+try:
+    import sounddevice as sd
+except ImportError:
+    sd = None
 import websockets
 from websockets.exceptions import InvalidStatus
 from dotenv import load_dotenv
@@ -69,6 +72,10 @@ class VoiceListener(QThread):
             self.listening_stopped.emit()
 
     async def _listen(self):
+        if sd is None:
+            self.listener_error.emit("sounddevice is not installed. Install with: pip install sounddevice")
+            return
+
         self._loop = asyncio.get_running_loop()
         self._audio_queue = asyncio.Queue(maxsize=100)
         params = {

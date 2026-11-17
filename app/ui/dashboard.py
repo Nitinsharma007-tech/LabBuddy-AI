@@ -582,7 +582,21 @@ class LabBuddyDashboard(QMainWindow):
 
     def open_experiments(self, course):
         dialog = ExperimentPage(course, self)
+        dialog.experiment_selected.connect(lambda exp: self.launch_robot(course, exp))
         dialog.exec()
+
+    def launch_robot(self, course, experiment):
+        from app.ui.robot_window import RobotWindow
+        from app.core.robot_controller import RobotController
+
+        if not hasattr(self, "robot") or self.robot is None or not self.robot.isVisible():
+            self.robot = RobotWindow()
+            self.controller = RobotController(self.robot)
+            self.robot.show()
+
+        self.controller.selected_course = course
+        num = experiment.get("number", 1)
+        self.controller.on_experiment_card_selected(num)
 
     def edit_course(self, course):
         new_name, accepted = QInputDialog.getText(

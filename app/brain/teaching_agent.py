@@ -1,291 +1,181 @@
+"""
+Teaching Agent for RoboBuddy.
+Manages step-by-step experiment explanations, analogies, and the understanding confirmation loop.
+"""
 
 import re
 
 
 class TeachingAgent:
-
-    def __init__(self, assistant):
-
+    def __init__(self, assistant, language_manager):
         self.assistant = assistant
+        self.language_manager = language_manager
 
-        # Active learning context
         self.course = None
         self.experiment = None
-
-        self.current_topic = None
-        self.current_lesson_step = 0
-
-        self.last_question = None
-        self.last_answer = None
-
-        self.lesson_history = []
-
+        self.current_step = 0
+        self.explanation_attempt = 1
         self.awaiting_confirmation = False
-    
-    def set_lesson(self, course, experiment):
 
-        # Do not reset context if the same lesson is already active.
-        same_lesson = (
-            self.course is not None
-            and self.experiment is not None
-            and self.course.get("name") == course.get("name")
-            and self.experiment.get("number") == experiment.get("number")
-        )
-
-        if same_lesson:
-            return
-
+    def set_lesson(self, course: dict, experiment: dict):
         self.course = course
         self.experiment = experiment
-
-        self.current_topic = experiment.get("title", "")
-        self.current_lesson_step = 0
-
-        self.last_question = None
-        self.last_answer = None
-
-        self.lesson_history = []
-        self.awaiting_confirmation = False
-    # --------------------------------------------------
-    # START A NEW LESSON
-    # --------------------------------------------------
-
-    def start_lesson(self, course, experiment):
-
-        self.course = course
-        self.experiment = experiment
-
-        self.current_topic = experiment.get("title", "")
-        self.current_lesson_step = 0
-
-        self.last_question = None
-        self.last_answer = None
-
-        self.lesson_history = []
-
+        self.current_step = 0
+        self.explanation_attempt = 1
         self.awaiting_confirmation = False
 
-        return self.ask(
-            "Begin teaching me this experiment step by step."
-        )
-
-    # --------------------------------------------------
-    # BUILD SYLLABUS CONTEXT
-    # --------------------------------------------------
-
-    def build_context(self):
-
-        if not self.course or not self.experiment:
+    def build_context(self) -> str:
+        if not self.experiment:
             return ""
-
-        syllabus_text = self.course.get(
-            "syllabus_text", ""
-        )[:12000]
-
-        concepts = self.experiment.get("concepts", [])
-
-        if isinstance(concepts, list):
-            concepts = ", ".join(map(str, concepts))
-
-        return f"""
-You are LabBuddy, a patient programming and laboratory teacher.
-
-COURSE:
-{self.course.get("name", "")}
-
-SELECTED EXPERIMENT:
-{self.experiment.get("number", "")}.
-{self.experiment.get("title", "")}
-
-EXPERIMENT DESCRIPTION:
-{self.experiment.get("description", "")}
-
-KEY CONCEPTS:
-{concepts}
-
-UPLOADED SYLLABUS:
-{syllabus_text}
-"""
-
-    # --------------------------------------------------
-    # DETECT FOLLOW-UP REQUESTS
-    # --------------------------------------------------
-
-    def detect_followup(self, question):
-
-        text = question.lower().strip()
-
-        patterns = {
-            "continue": [
-                "continue",
-                "go ahead",
-                "next part",
-                "what next",
-                "proceed",
-                "move ahead"
-            ],
-
-            "example": [
-                "another example",
-                "give me an example",
-                "show an example",
-                "more examples"
-            ],
-
-            "repeat": [
-                "repeat that",
-                "say that again",
-                "explain again",
-                "repeat the explanation"
-            ],
-
-            "simplify": [
-                "explain simply",
-                "make it easier",
-                "explain in simple words",
-                "i don't understand"
-            ]
-        }
-
-        for intent, phrases in patterns.items():
-
-            if any(phrase in text for phrase in phrases):
-                return intent
-
-        return None
-
-    # --------------------------------------------------
-    # BUILD FOLLOW-UP INSTRUCTIONS
-    # --------------------------------------------------
-
-    def build_followup_instruction(self, question):
-
-        followup = self.detect_followup(question)
-
-        if followup == "continue":
-
-            return """
-Continue the current lesson from where you stopped.
-
-Do not restart the experiment.
-Explain the next logical concept.
-Avoid repeating previously explained material.
-"""
-
-        if followup == "example":
-
-            return """
-Give another practical example of the current topic.
-
-Explain the code and expected output step by step.
-Do not restart the entire lesson.
-"""
-
-        if followup == "repeat":
-
-            return """
-Repeat and clarify your previous explanation.
-Use simpler language and a different example if helpful.
-"""
-
-        if followup == "simplify":
-
-            return """
-Explain the current concept again using very simple language.
-Use a beginner-friendly analogy and a small example.
-"""
-
-        return ""
-
-    # --------------------------------------------------
-    # ASK THE TEACHING MODEL
-    # --------------------------------------------------
-
-    def ask(self, question):
-
-        if not question or not question.strip():
-            return "Please tell me what you would like to learn."
-
-        followup_instruction = (
-            self.build_followup_instruction(question)
+        title = self.experiment.get("title", "Programming Experiment")
+        number = self.experiment.get("number", "")
+        desc = self.experiment.get("description", "")
+        concepts = self.experiment.get("concepts", "")
+        return (
+            f"Experiment {number}: {title}\n"
+            f"Objective: {desc}\n"
+            f"Key Concepts: {concepts}\n"
         )
+
+    def explain_experiment(self, re_explain: bool = False) -> str:
+        """
+        Explain the experiment in a structured, beginner-friendly way.
+        If re_explain is True, use simpler language and a new analogy.
+        """
+        if not self.experiment:
+            return "Please select an experiment first."
 
         context = self.build_context()
+        lang = self.language_manager.language
+        is_hinglish = "hind" in lang.lower() or "hing" in lang.lower()
 
-        history = ""
+        if re_explain:
+            self.explanation_attempt += 1
+            if is_hinglish:
+                instruction = (
+                    "User ko pichla explanation samajh nahi aaya. "
+                    "Ab ek bilkul alag, simple real-life everyday example ya analogy ke saath "
+                    "bohot aasan Hinglish mein explain karo. "
+                    "Dheere-dheere explain karo aur technical jargons ko simple words mein break down karo. "
+                    "Pehle wali explanation bilkul repeat mat karo."
+                )
+            else:
+                instruction = (
+                    "The student did not understand the previous explanation. "
+                    "Re-explain the experiment using a completely new, everyday practical analogy and simpler words. "
+                    "Break down the logic into smaller, beginner-friendly steps. "
+                    "Do not repeat the exact previous explanation."
+                )
+        else:
+            if is_hinglish:
+                instruction = (
+                    "Yeh experiment ek beginner student ko step by step explain karo: "
+                    "1. Real-world example / practical analogy jisse concept visually clear ho. "
+                    "2. Core logic aur working mechanism. "
+                    "3. Algorithm / step-by-step approach. "
+                    "4. Expected input aur output. "
+                    "Response natural Hinglish mein rakho aur voice ke liye concise aur clear banao."
+                )
+            else:
+                instruction = (
+                    "Explain this experiment step by step for a beginner student: "
+                    "1. A relatable real-world example / analogy to make the concept intuitive. "
+                    "2. The core logic and working mechanism. "
+                    "3. The step-by-step algorithm. "
+                    "4. Expected input and output. "
+                    "Keep the response voice-friendly, clear, and structured."
+                )
 
-        for item in self.lesson_history[-6:]:
+        prompt = (
+            f"CONTEXT:\n{context}\n\n"
+            f"TEACHING INSTRUCTION:\n{instruction}\n\n"
+            "Remember: Never provide the complete solution code. Teach the concepts."
+        )
 
-            history += (
-                f"\nStudent: {item['question']}\n"
-                f"LabBuddy: {item['answer']}\n"
+        if not self.assistant:
+            self.awaiting_confirmation = True
+            if is_hinglish:
+                return (
+                    f"Chalo Experiment {self.experiment.get('number', 1)}: {self.experiment.get('title', '')} samajhte hain.\n\n"
+                    f"Objective: {self.experiment.get('description', '')}\n"
+                    f"Concepts: {self.experiment.get('concepts', '')}\n\n"
+                    "Step 1: Pehle problem statement aur expected output ko samjho.\n"
+                    "Step 2: Logic break down karo aur step-by-step algorithm socho.\n"
+                    "Step 3: Code likhte waqt har line ka purpose clear rakho."
+                )
+            return (
+                f"Let's learn Experiment {self.experiment.get('number', 1)}: {self.experiment.get('title', '')}.\n\n"
+                f"Objective: {self.experiment.get('description', '')}\n"
+                f"Concepts: {self.experiment.get('concepts', '')}\n\n"
+                "Step 1: Understand the core objective and expected output.\n"
+                "Step 2: Break down the logic into a step-by-step algorithm.\n"
+                "Step 3: Write code incrementally while verifying each logical step."
             )
 
-        prompt = f"""
-{context}
+        response = self.assistant.ask(prompt)
+        self.awaiting_confirmation = True
+        return response
 
-CURRENT LESSON STATE:
+    def check_understanding_response(self, text: str) -> str:
+        """
+        Analyze whether the student understood the explanation.
+        Returns:
+            'understood' -> Student understood. Proceed to workspace.
+            'not_understood' -> Student has doubts or needs re-explanation.
+            'other' -> User asked an unrelated or specific question.
+        """
+        if not text:
+            return "other"
+        t = text.lower().strip()
 
-Current topic: {self.current_topic}
-Lesson step: {self.current_lesson_step}
+        understood_patterns = [
+            r"\byes\b",
+            r"\byep\b",
+            r"\byeah\b",
+            r"\bhaan\b",
+            r"\bha\b",
+            r"samajh aa gaya",
+            r"samajh gaya",
+            r"samajh gayi",
+            r"understood",
+            r"clear hai",
+            r"all clear",
+            r"got it",
+            r"i get it",
+            r"no doubts",
+            r"ready to code",
+            r"start coding",
+            r"lets code",
+            r"chalo code karein",
+            r"aage badho",
+            r"proceed",
+        ]
+        for p in understood_patterns:
+            if re.search(p, t):
+                return "understood"
 
-RECENT CONVERSATION:
-{history}
+        not_understood_patterns = [
+            r"\bno\b",
+            r"\bnahi\b",
+            r"\bna\b",
+            r"explain again",
+            r"samajh nahi aaya",
+            r"samajh nahi aayi",
+            r"dobara samjhao",
+            r"dobara explain karo",
+            r"repeat",
+            r"once more",
+            r"phir se batao",
+            r"phir se explain karo",
+            r"doubt hai",
+            r"not clear",
+            r"confused",
+            r"did not understand",
+            r"didn't understand",
+            r"ye part clear nahi hua",
+        ]
+        for p in not_understood_patterns:
+            if re.search(p, t):
+                return "not_understood"
 
-TEACHING INSTRUCTIONS:
-
-1. Teach like a patient programming teacher.
-2. Use simple beginner-friendly language.
-3. Explain concepts step by step.
-4. Use practical Python examples where relevant.
-5. Explain code and expected output.
-6. Avoid repeating previous explanations unnecessarily.
-7. Stay within the selected experiment when appropriate.
-8. Do not invent syllabus requirements.
-9. If syllabus information is missing, say so.
-10. Use natural, voice-friendly language.
-
-FOLLOW-UP INSTRUCTIONS:
-{followup_instruction}
-
-STUDENT'S LATEST MESSAGE:
-{question}
-
-Respond naturally as LabBuddy.
-"""
-
-        answer = self.assistant.ask(prompt)
-
-        if not answer:
-            return "I couldn't generate an explanation. Please try again."
-
-        self.last_question = question
-        self.last_answer = answer
-
-        self.current_lesson_step += 1
-
-        self.lesson_history.append({
-            "question": question,
-            "answer": answer
-        })
-
-        return answer
-
-    # --------------------------------------------------
-    # RESET LESSON
-    # --------------------------------------------------
-
-    def reset(self):
-
-        self.course = None
-        self.experiment = None
-
-        self.current_topic = None
-        self.current_lesson_step = 0
-
-        self.last_question = None
-        self.last_answer = None
-
-        self.lesson_history = []
-
-        self.awaiting_confirmation = False
+        return "other"
