@@ -92,15 +92,15 @@ DEEPGRAM_API_KEY=your_deepgram_api_key_here
 
 ### 3. Run RoboBuddy Companion
 ```powershell
-python app/robot_main.py
+python -m app.robot_main
 ```
 
 ### 4. Run Course Management Dashboard
 ```powershell
-python app/main.py
+python -m app.main
 ```
 
 ### 5. Run Automated Pipeline Test
 ```powershell
-python tests/test_pipeline.py
+python tests/test_pipeline
 ```

@@ -22,19 +22,19 @@ class GeminiAssistant:
         self.language = language
         self.history = []
 
-        self.config = types.GenerateContentConfig(
-            temperature=0.3,
-            max_output_tokens=900,
-        )
+        config_kwargs = {
+            "temperature": 0.3,
+            "max_output_tokens": 900,
+        }
+        if "2.5" in self.model and hasattr(types, "ThinkingConfig"):
+            config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+
+        self.config = types.GenerateContentConfig(**config_kwargs)
 
     def set_language(self, language: str):
         self.language = language
 
-    def ask(self, question: str, custom_system_prompt: str = None) -> str:
-        question = (question or "").strip()
-        if not question:
-            return "Please ask a programming question."
-
+    def _build_ask_prompt(self, question: str, custom_system_prompt: str = None) -> str:
         sys_prompt = custom_system_prompt or get_system_prompt(self.language)
 
         conversation = []
@@ -44,7 +44,7 @@ class GeminiAssistant:
 
         conversation.append(f"Student: {question}")
 
-        prompt = (
+        return (
             f"{sys_prompt}\n\n"
             "Keep the answer concise, encouraging, and voice-friendly. "
             "Explain one concept at a time. Never dump ready-made solutions.\n\n"
@@ -53,6 +53,19 @@ class GeminiAssistant:
             + "\n\nRoboBuddy:"
         )
 
+    def _record_turn(self, question: str, answer: str):
+        self.history.extend([
+            {"role": "user", "text": question},
+            {"role": "assistant", "text": answer},
+        ])
+        self.history = self.history[-8:]
+
+    def ask(self, question: str, custom_system_prompt: str = None) -> str:
+        question = (question or "").strip()
+        if not question:
+            return "Please ask a programming question."
+
+        prompt = self._build_ask_prompt(question, custom_system_prompt)
         started = time.perf_counter()
         try:
             response = self.client.models.generate_content(
@@ -68,12 +81,52 @@ class GeminiAssistant:
             if not answer:
                 return "I couldn't generate a response. Please try asking in another way."
 
-            self.history.extend([
-                {"role": "user", "text": question},
-                {"role": "assistant", "text": answer},
-            ])
-            self.history = self.history[-8:]
+            self._record_turn(question, answer)
             return answer
+
+        except Exception as error:
+            print(f"Gemini Error ({self.model}): {error}", flush=True)
+            raise
+
+    def ask_stream(self, question: str, custom_system_prompt: str = None):
+        """Yield response text chunks as Gemini streams them for low-latency TTS."""
+        question = (question or "").strip()
+        if not question:
+            yield "Please ask a programming question."
+            return
+
+        prompt = self._build_ask_prompt(question, custom_system_prompt)
+        started = time.perf_counter()
+        first_token_logged = False
+        chunks = []
+
+        try:
+            stream = self.client.models.generate_content_stream(
+                model=self.model,
+                contents=prompt,
+                config=self.config,
+            )
+            for chunk in stream:
+                text = getattr(chunk, "text", None) or ""
+                if not text:
+                    continue
+                if not first_token_logged:
+                    ttft_ms = (time.perf_counter() - started) * 1000
+                    print(f"[LATENCY] Gemini first token: {ttft_ms:.0f} ms (model={self.model})", flush=True)
+                    first_token_logged = True
+                chunks.append(text)
+                yield text
+
+            answer = "".join(chunks).strip()
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            print(f"[LATENCY] Gemini complete: {elapsed_ms:.0f} ms (model={self.model})", flush=True)
+
+            if not answer:
+                fallback = "I couldn't generate a response. Please try asking in another way."
+                yield fallback
+                return
+
+            self._record_turn(question, answer)
 
         except Exception as error:
             print(f"Gemini Error ({self.model}): {error}", flush=True)

@@ -7,6 +7,11 @@ Key Concepts: Numeric operators, operator precedence, expressions, int(), float(
 """
 
 # RoboBuddy is monitoring your workspace.
-# Write your code below and save the file (Ctrl + S).
+# Write your code below and save the file (Ctrl + Sa
+a = int(input("Enter the first number: "))
+b = int(input("Enter the second number: "))
+print("The sum of the two numbers is:", a+b)
+print("The difference of the two numbers is:", a-b)
+print("The product of the two numbers is:", a*b)
+print("The quotient of the two numbers is:", a/b)
 
-name = "nitin"

@@ -37,14 +37,8 @@ class TeachingAgent:
             f"Key Concepts: {concepts}\n"
         )
 
-    def explain_experiment(self, re_explain: bool = False) -> str:
-        """
-        Explain the experiment in a structured, beginner-friendly way.
-        If re_explain is True, use simpler language and a new analogy.
-        """
-        if not self.experiment:
-            return "Please select an experiment first."
-
+    def _build_explain_prompt(self, re_explain: bool = False):
+        """Build teaching prompt and offline fallback text."""
         context = self.build_context()
         lang = self.language_manager.language
         is_hinglish = "hind" in lang.lower() or "hing" in lang.lower()
@@ -92,18 +86,17 @@ class TeachingAgent:
             "Remember: Never provide the complete solution code. Teach the concepts."
         )
 
-        if not self.assistant:
-            self.awaiting_confirmation = True
-            if is_hinglish:
-                return (
-                    f"Chalo Experiment {self.experiment.get('number', 1)}: {self.experiment.get('title', '')} samajhte hain.\n\n"
-                    f"Objective: {self.experiment.get('description', '')}\n"
-                    f"Concepts: {self.experiment.get('concepts', '')}\n\n"
-                    "Step 1: Pehle problem statement aur expected output ko samjho.\n"
-                    "Step 2: Logic break down karo aur step-by-step algorithm socho.\n"
-                    "Step 3: Code likhte waqt har line ka purpose clear rakho."
-                )
-            return (
+        if is_hinglish:
+            fallback = (
+                f"Chalo Experiment {self.experiment.get('number', 1)}: {self.experiment.get('title', '')} samajhte hain.\n\n"
+                f"Objective: {self.experiment.get('description', '')}\n"
+                f"Concepts: {self.experiment.get('concepts', '')}\n\n"
+                "Step 1: Pehle problem statement aur expected output ko samjho.\n"
+                "Step 2: Logic break down karo aur step-by-step algorithm socho.\n"
+                "Step 3: Code likhte waqt har line ka purpose clear rakho."
+            )
+        else:
+            fallback = (
                 f"Let's learn Experiment {self.experiment.get('number', 1)}: {self.experiment.get('title', '')}.\n\n"
                 f"Objective: {self.experiment.get('description', '')}\n"
                 f"Concepts: {self.experiment.get('concepts', '')}\n\n"
@@ -112,9 +105,39 @@ class TeachingAgent:
                 "Step 3: Write code incrementally while verifying each logical step."
             )
 
+        return prompt, fallback
+
+    def explain_experiment(self, re_explain: bool = False) -> str:
+        """
+        Explain the experiment in a structured, beginner-friendly way.
+        If re_explain is True, use simpler language and a new analogy.
+        """
+        if not self.experiment:
+            return "Please select an experiment first."
+
+        prompt, fallback = self._build_explain_prompt(re_explain=re_explain)
+        if not self.assistant:
+            self.awaiting_confirmation = True
+            return fallback
+
         response = self.assistant.ask(prompt)
         self.awaiting_confirmation = True
         return response
+
+    def explain_experiment_stream(self, re_explain: bool = False):
+        """Stream experiment explanation chunks for low-latency voice output."""
+        if not self.experiment:
+            yield "Please select an experiment first."
+            return
+
+        prompt, fallback = self._build_explain_prompt(re_explain=re_explain)
+        if not self.assistant:
+            self.awaiting_confirmation = True
+            yield fallback
+            return
+
+        yield from self.assistant.ask_stream(prompt)
+        self.awaiting_confirmation = True
 
     def check_understanding_response(self, text: str) -> str:
         """

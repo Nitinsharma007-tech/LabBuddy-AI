@@ -36,6 +36,7 @@ class VoiceListener(QThread):
         self._audio_queue = None
         self._stream = None
         self._started_at = None
+        self._last_speech_at = None
 
     def stop_listening(self):
         self._stop_event.set()
@@ -53,6 +54,7 @@ class VoiceListener(QThread):
 
         self._stop_event.clear()
         self._started_at = time.perf_counter()
+        self._last_speech_at = None
         try:
             asyncio.run(self._listen())
         except InvalidStatus as error:
@@ -82,6 +84,8 @@ class VoiceListener(QThread):
             "model": "flux-general-multi",
             "encoding": "linear16",
             "sample_rate": str(self.SAMPLE_RATE),
+            "eot_threshold": "0.7",
+            "eot_timeout_ms": "1200",
         }
         url = "wss://api.deepgram.com/v2/listen?" + urlencode(params)
         headers = {"Authorization": f"Token {self.api_key}"}
@@ -160,11 +164,16 @@ class VoiceListener(QThread):
                 transcript = (data.get("transcript") or "").strip()
                 if event in ("Update", "EagerEndOfTurn"):
                     if transcript:
+                        self._last_speech_at = time.perf_counter()
                         self.partial_transcript.emit(transcript)
                 elif event == "EndOfTurn":
                     if transcript:
-                        if self._started_at is not None:
-                            elapsed = (time.perf_counter() - self._started_at) * 1000
+                        now = time.perf_counter()
+                        if self._last_speech_at is not None:
+                            eot_ms = (now - self._last_speech_at) * 1000
+                            print(f"[LATENCY] Deepgram EOT wait: {eot_ms:.0f} ms", flush=True)
+                        elif self._started_at is not None:
+                            elapsed = (now - self._started_at) * 1000
                             print(f"[LATENCY] Deepgram final transcript: {elapsed:.0f} ms", flush=True)
                         self.final_transcript.emit(transcript)
                     self.stop_listening()

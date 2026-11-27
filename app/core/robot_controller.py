@@ -42,6 +42,28 @@ class AskWorker(QThread):
             self.failed.emit(str(error))
 
 
+class StreamAskWorker(QThread):
+    chunk_received = Signal(str)
+    completed = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, stream_func, *args, parent=None):
+        super().__init__(parent)
+        self.stream_func = stream_func
+        self.args = args
+
+    def run(self):
+        try:
+            parts = []
+            for chunk in self.stream_func(*self.args):
+                if chunk:
+                    parts.append(chunk)
+                    self.chunk_received.emit(chunk)
+            self.completed.emit("".join(parts).strip())
+        except Exception as error:
+            self.failed.emit(str(error))
+
+
 class AnalysisWorker(QThread):
     analysis_ready = Signal(object)
 
@@ -109,6 +131,10 @@ class RobotController(QObject):
         # Worker threads
         self.ask_worker = None
         self.analysis_worker = None
+        self._stream_started = False
+        self._stream_next_action = None
+        self._stream_append_uq = False
+        self._stream_next_stage = None
 
         self._init_subsystems()
         self._connect_signals()
@@ -290,29 +316,48 @@ class RobotController(QObject):
         if not experiments:
             return None
 
-        # Check for digits
-        num_match = re.search(r"\b(\d+)\b", text)
+        lowered = text.lower().strip()
+        exp_by_num = {int(exp.get("number", 0)): exp for exp in experiments}
+
+        # 1. Check for digits (prefer a digit right after "experiment" or "number" if multiple)
+        explicit_digit = re.search(r"\b(?:experiment|exp|number|no\.?)\s*(\d+)\b", lowered)
+        if explicit_digit:
+            val = int(explicit_digit.group(1))
+            if val in exp_by_num:
+                return exp_by_num[val]
+
+        num_match = re.search(r"\b(\d+)\b", lowered)
         if num_match:
             val = int(num_match.group(1))
-            for exp in experiments:
-                if int(exp.get("number", 0)) == val:
-                    return exp
+            if val in exp_by_num:
+                return exp_by_num[val]
 
-        # Word number matching
+        # 2. Unambiguous word number matching (exclude English verb "do" from matching 2)
         word_map = {
             "one": 1, "first": 1, "pehla": 1, "ek": 1,
-            "two": 2, "second": 2, "doosra": 2, "do": 2,
+            "two": 2, "second": 2, "doosra": 2, "dusra": 2,
             "three": 3, "third": 3, "teesra": 3, "teen": 3,
             "four": 4, "fourth": 4, "chautha": 4, "chaar": 4,
-            "five": 5, "fifth": 5, "paanchwa": 5, "paanch": 5,
+            "five": 5, "fifth": 5, "paanchwa": 5, "paanch": 5, "panch": 5,
+            "six": 6, "sixth": 6, "chhatha": 6, "chhe": 6,
+            "seven": 7, "seventh": 7, "saatwa": 7, "saat": 7,
+            "eight": 8, "eighth": 8, "aathwa": 8, "aath": 8,
+            "nine": 9, "ninth": 9, "nauwa": 9, "nau": 9,
+            "ten": 10, "tenth": 10, "daswa": 10, "das": 10,
         }
         for w, num in word_map.items():
-            if re.search(rf"\b{w}\b", text.lower()):
-                for exp in experiments:
-                    if int(exp.get("number", 0)) == num:
-                        return exp
+            if re.search(rf"\b{w}\b", lowered) and num in exp_by_num:
+                return exp_by_num[num]
 
-        # Fuzzy title matching
+        # 3. Hindi "do" (2) only when used as an experiment number, never as the English verb "do"
+        if 2 in exp_by_num and (
+            lowered == "do"
+            or re.search(r"\b(?:experiment|number|no\.?)\s+do\b", lowered)
+            or re.search(r"\bdo\s+(?:number|experiment)\b", lowered)
+        ):
+            return exp_by_num[2]
+
+        # 4. Fuzzy title matching
         titles = [exp.get("title", "") for exp in experiments]
         matches = difflib.get_close_matches(text, titles, n=1, cutoff=0.45)
         if matches:
@@ -346,11 +391,14 @@ class RobotController(QObject):
         self.robot.set_state("thinking")
         self.robot.show_bubble(f"Preparing lesson for Experiment {number}: {title}...")
 
-        # Run Gemini in background
-        self.ask_worker = AskWorker(self.teaching_agent.explain_experiment, False)
-        self.ask_worker.completed.connect(self.on_teaching_explanation_ready)
-        self.ask_worker.failed.connect(self.on_worker_error)
-        self.ask_worker.start()
+        # Run Gemini streaming in background -> immediate TTS
+        self._start_streaming_response(
+            self.teaching_agent.explain_experiment_stream,
+            False,
+            next_action="listen",
+            append_understanding_question=True,
+            next_stage="awaiting_understanding",
+        )
 
     def on_teaching_explanation_ready(self, explanation: str):
         self.stage = "awaiting_understanding"
@@ -377,10 +425,13 @@ class RobotController(QObject):
             )
             self.robot.show_bubble(re_prompt)
 
-            self.ask_worker = AskWorker(self.teaching_agent.explain_experiment, True)
-            self.ask_worker.completed.connect(self.on_teaching_explanation_ready)
-            self.ask_worker.failed.connect(self.on_worker_error)
-            self.ask_worker.start()
+            self._start_streaming_response(
+                self.teaching_agent.explain_experiment_stream,
+                True,
+                next_action="listen",
+                append_understanding_question=True,
+                next_stage="awaiting_understanding",
+            )
 
         else:
             # User asked a doubt or specific question
@@ -461,11 +512,65 @@ class RobotController(QObject):
             self.robot.status.setText("Code looking good! Keep going.")
 
     def handle_user_query(self, question: str):
+        if not self.assistant:
+            self.on_worker_error("Gemini assistant is not configured. Check GEMINI_API_KEY in .env.")
+            return
         self.robot.set_state("thinking")
-        self.ask_worker = AskWorker(self.assistant.ask, question)
-        self.ask_worker.completed.connect(self.on_general_answer_ready)
+        in_understanding = self.stage == "awaiting_understanding"
+        self._start_streaming_response(
+            self.assistant.ask_stream,
+            question,
+            next_action="listen" if in_understanding else "idle",
+            append_understanding_question=in_understanding,
+        )
+
+    def _start_streaming_response(
+        self,
+        stream_func,
+        *args,
+        next_action: str = "idle",
+        append_understanding_question: bool = False,
+        next_stage: str = None,
+    ):
+        self._stream_started = False
+        self._stream_next_action = next_action
+        self._stream_append_uq = append_understanding_question
+        self._stream_next_stage = next_stage
+
+        self.ask_worker = StreamAskWorker(stream_func, *args, parent=self)
+        self.ask_worker.chunk_received.connect(self._on_stream_chunk)
+        self.ask_worker.completed.connect(self._on_stream_completed)
         self.ask_worker.failed.connect(self.on_worker_error)
         self.ask_worker.start()
+
+    def _on_stream_chunk(self, chunk: str):
+        if self.closing:
+            return
+        if not self._stream_started:
+            self._stream_started = True
+            self.next_action = self._stream_next_action
+            self.robot.set_state("speaking")
+            self.robot.show_answer("")
+            self.speaker.start_stream(voice=self.language_manager.voice)
+        self.speaker.push_text(chunk)
+
+    def _on_stream_completed(self, full_text: str):
+        if self.closing:
+            return
+        if self._stream_next_stage:
+            self.stage = self._stream_next_stage
+
+        if not self._stream_started:
+            self.speak_prompt(full_text, next_action=self._stream_next_action)
+            return
+
+        if self._stream_append_uq:
+            q = self.language_manager.get_understanding_question()
+            full_text = f"{full_text}\n\n{q}" if full_text else q
+            self.speaker.push_text(f" {q}")
+
+        self.spoken_text = full_text
+        self.speaker.finish_stream()
 
     def on_general_answer_ready(self, answer: str):
         if self.stage == "awaiting_understanding":
